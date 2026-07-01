@@ -1,0 +1,10 @@
+{:itonami.blueprint/id "cloud-itonami-isco-8189"
+ :itonami.blueprint/name "Independent Stationary Plant Operations"
+ :itonami.blueprint/isco-08 "8189"
+ :itonami.blueprint/domain :manufacturing/stationary-plant-operations
+ :itonami.blueprint/license "AGPL-3.0-or-later"
+ :itonami.blueprint/social-impact [:local-jobs :worker-safety :manufacturing-quality]
+ :itonami.blueprint/governor :stationary-plant-governor
+ :itonami.blueprint/robotics true
+ :itonami.blueprint/required-technologies [:robotics :telemetry :dmn :bpmn :audit-ledger]
+ :itonami.blueprint/status :public-oss}
