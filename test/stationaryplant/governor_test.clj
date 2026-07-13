@@ -1,0 +1,92 @@
+(ns stationaryplant.governor-test
+  (:require [clojure.test :refer [deftest is testing]]
+            [stationaryplant.store :as store]
+            [stationaryplant.governor :as governor]))
+
+(defn- fresh-store []
+  (let [st (store/mem-store)]
+    (store/register-client! st {:client-id "client-1" :name "Kobo Plant Ops"})
+    (store/register-plant! st {:plant-id "P-1" :client-id "client-1"
+                               :name "boiler-3"
+                               :min-safe-pressure-kpa 100
+                               :max-safe-pressure-kpa 500
+                               :maintenance-due-hours 2000})
+    st))
+
+(defn- cycle [pressure hours]
+  {:op :approve-monitoring-cycle :effect :propose :plant-id "P-1"
+   :pressure-kpa pressure :operating-hours-since-maintenance hours
+   :confidence 0.9 :stake :low})
+
+(def ^:private req {:client-id "client-1"})
+
+(deftest ok-within-pressure-envelope-and-maintenance-due
+  (let [st (fresh-store)
+        v (governor/check req {} (cycle 300 1000) st)]
+    (is (:ok? v))))
+
+(deftest ok-at-exact-envelope-and-maintenance-edges
+  (testing "the pressure envelope and maintenance-due ceiling boundaries are inclusive"
+    (let [st (fresh-store)]
+      (is (:ok? (governor/check req {} (cycle 100 2000) st)))
+      (is (:ok? (governor/check req {} (cycle 500 2000) st))))))
+
+(deftest hard-on-pressure-out-of-envelope
+  (let [st (fresh-store)
+        v (governor/check req {} (assoc (cycle 800 1000) :confidence 0.99) st)]
+    (is (:hard? v))
+    (is (some #(= :pressure-out-of-envelope (:rule %)) (:violations v)))))
+
+(deftest hard-on-maintenance-overdue
+  (testing "operating past the maintenance-due hour count is a mechanical risk, not a scheduling inconvenience"
+    (let [st (fresh-store)
+          v (governor/check req {} (assoc (cycle 300 5000) :confidence 0.99) st)]
+      (is (:hard? v))
+      (is (some #(= :maintenance-overdue (:rule %)) (:violations v))))))
+
+(deftest hard-on-unknown-plant
+  (let [st (fresh-store)
+        v (governor/check req {} (assoc (cycle 300 1000) :plant-id "P-ghost") st)]
+    (is (:hard? v))
+    (is (some #(= :unknown-plant (:rule %)) (:violations v)))))
+
+(deftest hard-on-foreign-plant
+  (let [st (fresh-store)]
+    (store/register-client! st {:client-id "client-2" :name "Other"})
+    (let [v (governor/check {:client-id "client-2"} {} (cycle 300 1000) st)]
+      (is (:hard? v))
+      (is (some #(= :plant-wrong-client (:rule %)) (:violations v))))))
+
+(deftest hard-on-unregistered-client
+  (let [st (fresh-store)
+        v (governor/check {:client-id "nobody"} {} (cycle 300 1000) st)]
+    (is (:hard? v))
+    (is (some #(= :no-client (:rule %)) (:violations v)))))
+
+(deftest hard-on-no-actuation-violation
+  (let [st (fresh-store)
+        v (governor/check req {} (assoc (cycle 300 1000) :effect :direct-write) st)]
+    (is (:hard? v))
+    (is (some #(= :no-actuation (:rule %)) (:violations v)))))
+
+(deftest always-escalates-pressurized-proximity-even-at-high-confidence
+  (testing "no robot dispatch near pressurized systems without the governor gate"
+    (let [st (fresh-store)
+          v (governor/check req {} {:op :approve-pressurized-system-proximity :effect :propose
+                                    :plant-id "P-1" :confidence 0.99 :stake :low} st)]
+      (is (not (:hard? v)))
+      (is (:escalate? v)))))
+
+(deftest always-escalates-startup-shutdown-sequence-even-at-high-confidence
+  (testing "startup/shutdown sequences require human sign-off"
+    (let [st (fresh-store)
+          v (governor/check req {} {:op :approve-startup-shutdown-sequence :effect :propose
+                                    :plant-id "P-1" :confidence 0.99 :stake :low} st)]
+      (is (not (:hard? v)))
+      (is (:escalate? v)))))
+
+(deftest escalates-low-confidence
+  (let [st (fresh-store)
+        v (governor/check req {} (assoc (cycle 300 1000) :confidence 0.3) st)]
+    (is (not (:hard? v)))
+    (is (:escalate? v))))
