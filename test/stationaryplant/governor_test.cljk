@@ -1,5 +1,5 @@
 (ns stationaryplant.governor-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.test :refer [deftest is testing]]
             [stationaryplant.store :as store]
             [stationaryplant.governor :as governor]))
 
