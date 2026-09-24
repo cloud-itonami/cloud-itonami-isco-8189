@@ -1,0 +1,34 @@
+;; What this vertical's robot physically does, declared for
+;; kotoba.robotics.process (kotoba-lang/robotics). `kbb -M:physics` runs it.
+;;
+;; README "Robotics premise": a plant-monitoring robot performs gauge
+;; reading, temperature sensing and sample collection near operating
+;; stationary plant; work near pressurised systems or during start-up and
+;; shut-down needs human sign-off. Its physical work: the cooling-water loop
+;; whose gauges it reads, and the heat that reaches its contact temperature
+;; probe's pad when it holds it on a hot flange.
+;;
+;; Every number without a cited source is marked `estimate` in its :basis.
+;; Replacing an estimate with a sourced value is this bot's growth work.
+{:physics/schema "itonami.physical-ai.spec.v1"
+ :repo "cloud-itonami/cloud-itonami-isco-8189"
+ :cases
+ [{:id :cooling-water-loop
+   :kind :pipe-flow
+   :procedure "cooling water circulates through a 40 mm, 80 m loop to a compressor aftercooler; the robot reads the pressure gauges across it"
+   :params {:diameter-m 0.040 :length-m 80.0 :roughness-m 4.5e-5
+            :density-kg-m3 998.0 :viscosity-pa-s 1.0e-3 :pump-efficiency 0.60}
+   :sweep {:param :q-m3s :values [0.0005 0.001 0.0015 0.002 0.003]}
+   :quantity :pressure-drop-pa
+   :limit {:max 150000.0 :basis "estimate: head the loop's circulation pump has left for pipe friction at its duty point"}
+   :boundary {:lo 0.0002 :hi 0.006}}
+  {:id :probe-pad-on-hot-flange
+   :kind :thermal
+   :procedure "robot holds its contact thermometer on a hot flange for 2 minutes; the 3 mm silicone pad's hot face is at the flange temperature and its back face is the probe mount"
+   :params {:thickness-m 0.003 :conductivity-w-mk 0.20 :density-kg-m3 1200.0 :specific-heat-j-kgk 1300.0
+            :t0-c 25.0 :front-fixed? true :t-back-ambient-c 25.0 :h-back-w-m2k 20.0
+            :threshold-c 70.0 :duration-s 120.0 :nodes 11}
+   :sweep {:param :t-hot-c :values [80.0 120.0 160.0 200.0 240.0]}
+   :quantity :peak-back-c
+   :limit {:max 70.0 :basis "estimate: upper temperature the probe mount electronics tolerate"}
+   :boundary {:lo 40.0 :hi 300.0}}]}
